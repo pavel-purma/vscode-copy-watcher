@@ -22,8 +22,10 @@ Example:
 ```
 "copyWatcher.paths": [
     {
-        "source": "./Components/Component/**/*.js",
-        "destination": "../../ComponentDevelopPlace/Component"
+        "source": "Components/Component/**/*.js",
+        "destination": "../../ComponentRepository/Component",
+        "destinationRequired": true,
+        "initialCopy": false
     }
 ]
 ```

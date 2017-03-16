@@ -34,14 +34,17 @@
                         "type": "object",
                         "required": [
                             "source",
-                            "target"
+                            "destination"
                         ],
                         "properties": {
                             "source": {
                                 "type": "string"
                             },
-                            "target": {
+                            "destination": {
                                 "type": "string"
+                            },
+                            "destinationRequired": {
+                                "type": "boolean"
                             }
                         }
                     },
