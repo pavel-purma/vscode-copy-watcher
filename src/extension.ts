@@ -1,10 +1,11 @@
 import * as vscode from 'vscode';
 const cpx = require("cpx");
 
+
 export function activate(context: vscode.ExtensionContext) {
-    const config = vscode.workspace.getConfiguration('cpxWatcher');    
+    const config = vscode.workspace.getConfiguration('copyWatcher');    
     if (config && config.paths) { 
-         const channel = vscode.window.createOutputChannel('Cpx watcher');
+         const channel = vscode.window.createOutputChannel('Copy Watcher');
          channel.show();
         
         for (let i = 0; i < config.paths.length; ++i) { 
