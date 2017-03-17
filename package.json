@@ -45,6 +45,27 @@
                             },
                             "destinationRequired": {
                                 "type": "boolean"
+                            },
+                            "includes": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                }
+                            },
+                            "excludes": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                }
+                            },
+                            "initialCopy": {
+                                "type": "boolean"
+                            },
+                            "initialCopyBothSides": {
+                                "type": "boolean"
+                            },
+                            "deleteEnabled": {
+                                "type": "boolean"
                             }
                         }
                     },
