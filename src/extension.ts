@@ -1,7 +1,6 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
-const cpx = require("cpx");
 const Glob = require("glob").Glob;
 const minimatch = require("minimatch");
 
@@ -29,6 +28,27 @@ class FileUtils {
         });
     }
 
+    public static async copyFileNewerOnly(srcPath, dstPath): Promise<boolean> {
+        const srcStats = fs.statSync(srcPath);
+        const srcMtime = new Date(srcStats.mtime);
+
+        let dstMtime;
+        const dstExists = fs.existsSync(dstPath);
+        if (dstExists) {
+            let dstStats = fs.statSync(dstPath);
+            dstMtime = new Date(dstStats.mtime);
+        }
+
+        // CopyWatcher.consoleChannel.appendLine(`src: ${srcMtime}, dst: ${dstMtime}`);
+
+        if (!dstExists || ((Math.abs(dstMtime.getTime() - srcMtime.getTime()) > 2000) && (srcMtime.getTime() > dstMtime.getTime()))) {
+            await FileUtils.copyFile(srcPath, dstPath);
+            fs.utimesSync(dstPath, srcStats.mtime, srcStats.mtime);
+            return true;
+        }
+        return false;
+    }
+
     public static checkGlobMatch(file: string, includes: string[], excludes: string[]) {
         let matched = true;
         // check glob paterns
@@ -52,9 +72,18 @@ class FileUtils {
         }
         return matched;
     }
+
+    public static isFile(file: string): boolean {
+        try {
+            const stats = fs.lstatSync(file);
+            return !stats.isDirectory();
+        } catch (e) {
+            return false;
+        }
+    }
 }
 
-interface ICopyWatcherBatchConfig {
+interface ICopyWatcherSectionConfig {
     source: string;
     destination: string;
     destinationRequired: boolean;
@@ -67,7 +96,7 @@ interface ICopyWatcherBatchConfig {
     deleteEnabled: boolean;
 }
 
-const CopyWatcherBatchOptionsDefault: ICopyWatcherBatchConfig = {
+const CopyWatcherSectionOptionsDefault: ICopyWatcherSectionConfig = {
     source: null,
     destination: null,
     destinationRequired: true,
@@ -78,132 +107,120 @@ const CopyWatcherBatchOptionsDefault: ICopyWatcherBatchConfig = {
     deleteEnabled: true
 };
 
-class CopyWatcherBatch {
+class CopyWatcherSection {
 
-    constructor(options: ICopyWatcherBatchConfig) {
-        this.options = { ...CopyWatcherBatchOptionsDefault, ...options };
+    constructor(options: ICopyWatcherSectionConfig) {
+        this.options = { ...CopyWatcherSectionOptionsDefault, ...options };
     }
 
-    public options: ICopyWatcherBatchConfig;
+    public options: ICopyWatcherSectionConfig;
 
-    public channel: vscode.OutputChannel;
+    private _srcPathWatch: string;
 
-    public async initBatch() {
+    public async initSection() {
+        this._srcPathWatch = path.normalize(path.resolve(vscode.workspace.rootPath, this.options.source) + "/");
+
+        CopyWatcher.consoleChannel.appendLine(`Section initialize: '${this.options.source}' => '${this.options.destination}'`);
         if (this.options.initialCopy) {
             if (this.options.initialCopyBothSides) {
                 await this.execInitialCopyReverse();
             }
             await this.execInitialCopy();
         }
-
-        this.startWatch();
+        CopyWatcher.consoleChannel.appendLine("");
     }
 
     private async execInitialCopy() {
-        this.channel.appendLine("Do initial copy...");
+        CopyWatcher.consoleChannel.appendLine("Do initial copy...");
         const copyProcess = new CopyWatcherProcess();
         copyProcess.source = this.options.source;
         copyProcess.destination = this.options.destination;
         copyProcess.includes = this.options.includes;
         copyProcess.excludes = this.options.excludes;
-        await copyProcess.copyNewerOnly(this.channel);
+        await copyProcess.copyNewerOnly();
     }
 
     private async execInitialCopyReverse() {
-        this.channel.appendLine("Do reverse initial copy...");
+        CopyWatcher.consoleChannel.appendLine("Do reverse initial copy...");
         const copyProcess = new CopyWatcherProcess();
         copyProcess.source = this.options.destination;
         copyProcess.destination = this.options.source;
         copyProcess.includes = this.options.includes;
         copyProcess.excludes = this.options.excludes;
-        await copyProcess.copyNewerOnly(this.channel);
+        await copyProcess.copyNewerOnly();
     }
 
-    private watcher: vscode.FileSystemWatcher;
-
-    private checkMatch(file: string): boolean {
-        let srcPathWatch = path.resolve(vscode.workspace.rootPath, this.options.source);
-        let pathRel = file.substr(srcPathWatch.length);
-        if (pathRel.length > 0 && (pathRel[0] == "/" || pathRel[0] == "\\")) {
-            pathRel = pathRel.substr(1);
+    private getRelativePathBySource(file: string): string {
+        // check if file is inside source root
+        if (path.normalize(file.substr(0, this._srcPathWatch.length)) != path.normalize(this._srcPathWatch)) {
+            return null;
         }
+        // figure out relative path from source root
+        let relativePath = file.substr(this._srcPathWatch.length);
+        if (relativePath.length > 0 && (relativePath[0] == "/" || relativePath[0] == "\\")) {
+            relativePath = relativePath.substr(1);
+        }
+        return relativePath;
+    }
 
-        let matched = FileUtils.checkGlobMatch(pathRel, this.options.includes, this.options.excludes);
+    private checkMatch(relativePath: string): boolean {
+        let matched = FileUtils.checkGlobMatch(relativePath, this.options.includes, this.options.excludes);
         return matched;
     }
 
-    // private startWatch() {
-    //     this.channel.appendLine("Start watching...");
+    private async copyRelativePathFile(relativePath: string, watchAction: string) {
+        const srcPath = path.resolve(path.resolve(vscode.workspace.rootPath, this.options.source), relativePath);
+        const dstPath = path.resolve(path.resolve(vscode.workspace.rootPath, this.options.destination), relativePath);
+        if (await FileUtils.copyFileNewerOnly(srcPath, dstPath)) {
+            CopyWatcher.consoleChannel.appendLine(`Copy file (${watchAction}): ${srcPath} => ${dstPath}`);
+        }
+    }
 
-    //     // let srcPath = path.resolve(vscode.workspace.rootPath, this.options.source);
-    //     // let srcPathGlob = path.resolve(srcPath, "**/*");
-    //     //let srcPathGlob = this.options.source + "/**/*";
-    //     let srcPathGlob = "**/*";
+    private async deleteRelativePathFile(relativePath: string) {
+        const dstPath = path.resolve(path.resolve(vscode.workspace.rootPath, this.options.destination), relativePath);
+        if (fs.existsSync(dstPath)) {
+            CopyWatcher.consoleChannel.appendLine(`Delete file: ${dstPath}`);
+            fs.unlinkSync(dstPath);
+        }
+    }
 
-    //     this.watcher = vscode.workspace.createFileSystemWatcher(srcPathGlob, false, false, false);
-    //     this.watcher.onDidChange((uri) => {
-    //         debugger;
-    //         this.channel.appendLine(`file changed: ${uri}`);
-    //     });
-    //     this.watcher.onDidCreate((uri) => {
-    //         debugger;
-    //         this.channel.appendLine(`file created: ${uri}`);
-    //     });
-    //     this.watcher.onDidDelete((uri) => {
-    //         debugger;
-    //         this.channel.appendLine(`file deleted: ${uri}`);
-    //     });
-    // }
+    public checkDestinationFolderExists(): boolean {
+        const dstPath = path.resolve(vscode.workspace.rootPath, this.options.destination);
+        let exists = fs.existsSync(dstPath);
+        if (!exists) {
+            CopyWatcher.consoleChannel.appendLine(`Section temporary disabled. Destination folder not found: '${this.options.destination}'`);
+        }
+        return exists;
+    }
 
-    private startWatch() {
-        if (!this.options.source || this.options.source == '') {
+    public watcherFileChanged(file: string) {
+        if (!FileUtils.isFile(file)) {
             return;
         }
-        if (!this.options.destination || this.options.destination == '') {
+        const relativePath = this.getRelativePathBySource(file);
+        if (relativePath && this.checkMatch(relativePath)) {
+            this.copyRelativePathFile(relativePath, "changed");
+        }
+    }
+
+    public watcherFileCreated(file: string) {
+        if (!FileUtils.isFile(file)) {
             return;
         }
-        let srcPathWatch = path.resolve(vscode.workspace.rootPath, this.options.source);
-        let dstPathWatch = path.resolve(vscode.workspace.rootPath, this.options.destination);
-        let srcPathWatchGlob = path.resolve(srcPathWatch, "**/*");
+        const relativePath = this.getRelativePathBySource(file);
+        if (relativePath && this.checkMatch(relativePath)) {
+            this.copyRelativePathFile(relativePath, "created");
+        }
+    }
 
-        if (this.options.destinationRequired && !fs.existsSync(dstPathWatch)) {
-            this.channel.appendLine(`Destination '${this.options.destination}' does not exist. CopyWatcher not activated for this destination folder.`);
+    public watcherFileDeleted(file: string) {
+        if (!this.options.deleteEnabled) {
             return;
         }
-
-        const cpxWather = cpx.watch(srcPathWatchGlob, dstPathWatch, { initialCopy: false });
-
-        cpxWather.on("copy", (e) => {
-            debugger;
-
-            let srcPath = path.resolve(vscode.workspace.rootPath, e.srcPath);
-            if (this.checkMatch(srcPath)) {
-                let srcPath = path.resolve(vscode.workspace.rootPath, e.srcPath);
-                // srcPath = path.relative(vscode.workspace.rootPath, srcPath);
-                srcPath = srcPath;
-
-                let dstPath = path.resolve(vscode.workspace.rootPath, e.dstPath);
-
-                this.channel.appendLine(`Copy ${srcPath} => ${dstPath}`);
-            }
-        });
-
-        cpxWather.on("remove", (e) => {
-            debugger;
-
-            let srcPath = path.resolve(vscode.workspace.rootPath, e.path);
-            if (this.checkMatch(srcPath)) {
-                this.channel.appendLine(`Remove ${e.path}`);
-            }
-        });
-
-        cpxWather.on("watch-ready", (e) => {
-            this.channel.appendLine(`Start watching copy from '${this.options.source}' to '${this.options.destination}'`);
-        });
-
-        cpxWather.on("watch-error", (e) => {
-            this.channel.appendLine(`Watcher Error:\r\n${e}`);
-        });
+        const relativePath = this.getRelativePathBySource(file);
+        if (this.checkMatch(relativePath)) {
+            this.deleteRelativePathFile(relativePath);
+        }
     }
 }
 
@@ -215,25 +232,13 @@ class CopyWatcherProcess {
     public includes: string[];
     public excludes: string[];
 
-    public async copyNewerOnly(channel: vscode.OutputChannel) {
+    public async copyNewerOnly() {
         const files = await this.getMatchedFiles();
         for (let file of files) {
-            let srcPath = path.resolve(path.resolve(vscode.workspace.rootPath, this.source), file);
-            let dstPath = path.resolve(path.resolve(vscode.workspace.rootPath, this.destination), file);
-
-            var srcStats = fs.statSync(srcPath);
-            var srcMtime = new Date(srcStats.mtime);
-
-            var dstStats = fs.statSync(dstPath);
-            var dstMtime = new Date(dstStats.mtime);
-
-            // channel.appendLine(`src: ${srcMtime}, dst: ${dstMtime}`);
-
-            let dtDiff = dstMtime.getTime() - srcMtime.getTime();
-            if ((Math.abs(dtDiff) > 2000) && (srcMtime.getTime() > dstMtime.getTime())) {
-                await FileUtils.copyFile(srcPath, dstPath);
-                channel.appendLine(`Copy file: ${srcPath} => ${dstPath}`);
-                fs.utimesSync(dstPath, srcStats.mtime, srcStats.mtime);
+            const srcPath = path.resolve(path.resolve(vscode.workspace.rootPath, this.source), file);
+            const dstPath = path.resolve(path.resolve(vscode.workspace.rootPath, this.destination), file);
+            if (await FileUtils.copyFileNewerOnly(srcPath, dstPath)) {
+                CopyWatcher.consoleChannel.appendLine(`Copy file: ${srcPath} => ${dstPath}`);
             }
         }
     }
@@ -267,71 +272,81 @@ class CopyWatcherProcess {
     }
 }
 
-const copyWatcherBatches: CopyWatcherBatch[] = [];
+class CopyWatcher {
 
-export function activate(context: vscode.ExtensionContext) {
-    const config = vscode.workspace.getConfiguration('copyWatcher');
-    if (config && config.paths && config.paths.length > 0) {
-        const channel = vscode.window.createOutputChannel('Copy Watcher');
-        channel.appendLine("Copy Watcher initialization ...");
-        channel.appendLine(` - ${config.paths.length} copy paths configured`);
-        channel.appendLine('');
-        channel.show();
-        for (let i = 0; i < config.paths.length; ++i) {
-            const item = config.paths[i];
+    private static sections: CopyWatcherSection[] = [];
 
-            const copyWatcher = new CopyWatcherBatch(item);
-            copyWatcher.channel = channel;
-            copyWatcher.initBatch();
-            copyWatcherBatches.push();
+    public static consoleChannel: vscode.OutputChannel;
+
+    public static async activate(context: vscode.ExtensionContext) {
+        const config = vscode.workspace.getConfiguration('copyWatcher');
+        if (config && config.sections && config.sections.length > 0) {
+            CopyWatcher.consoleChannel = vscode.window.createOutputChannel('Copy Watcher');
+            CopyWatcher.consoleChannel.appendLine(`Copy Watcher initialization - ${config.sections.length} copy section(s) found`);
+            CopyWatcher.consoleChannel.appendLine('');
+            //CopyWatcher.consoleChannel.show();
+            for (let i = 0; i < config.sections.length; ++i) {
+                const sectionOptions = config.sections[i];
+                const section = new CopyWatcherSection(sectionOptions);
+                let addSection = true;
+                if (sectionOptions.destinationRequired) {
+                    addSection = section.checkDestinationFolderExists();
+                }
+                if (addSection) {
+                    CopyWatcher.sections.push(section);
+                }
+            }
+
+            for (let section of CopyWatcher.sections) {
+                await section.initSection();
+            }
+
+            if (CopyWatcher.sections.length > 0) {
+                CopyWatcher.startWatch();
+            }
         }
+    }
+
+    public static deactivate() {
+        if (CopyWatcher.watcher) {
+            CopyWatcher.watcher.dispose();
+            CopyWatcher.watcher = null;
+            CopyWatcher.sections = [];
+        }
+    }
+
+    private static watcher: vscode.FileSystemWatcher;
+
+    private static startWatch() {
+        CopyWatcher.consoleChannel.appendLine("Start watching...");
+
+        this.watcher = vscode.workspace.createFileSystemWatcher("**/*", false, false, false);
+
+        this.watcher.onDidChange((uri) => {
+            // CopyWatcher.consoleChannel.appendLine(`file changed: ${uri.fsPath}`);
+            for (let section of CopyWatcher.sections) {
+                section.watcherFileChanged(uri.fsPath);
+            }
+        });
+        this.watcher.onDidCreate((uri) => {
+            // CopyWatcher.consoleChannel.appendLine(`file created: ${uri.fsPath}`);
+            for (let section of CopyWatcher.sections) {
+                section.watcherFileCreated(uri.fsPath);
+            }
+        });
+        this.watcher.onDidDelete((uri) => {
+            // CopyWatcher.consoleChannel.appendLine(`file deleted: ${uri.fsPath}`);
+            for (let section of CopyWatcher.sections) {
+                section.watcherFileDeleted(uri.fsPath);
+            }
+        });
     }
 }
 
-export function deactivate() {
+export function activate(context: vscode.ExtensionContext) {
+    CopyWatcher.activate(context);
 }
 
-
-
-// exec_cpx(channel, item.source, item.destination, item.destinationRequired || true, item.initialCopy || false);
-
-// function exec_cpx(channel: vscode.OutputChannel, source: string, destination: string, destinationRequired: boolean, initialCopy: boolean) {
-//     if (!source || source == '') {
-//         return;
-//     }
-//     if (!destination || destination == '') {
-//         return;
-//     }
-//     let srcPath = path.resolve(vscode.workspace.rootPath, source);
-//     let dstPath = path.resolve(vscode.workspace.rootPath, destination);
-
-//     if (destinationRequired && !fs.existsSync(dstPath)) {
-//         channel.appendLine(`Destination '${destination}' does not exist. CopyWatcher not activated for this destination folder.`);
-//         return;
-//     }
-
-//     const cpxWather = cpx.watch(srcPath, dstPath, { update: true, initialCopy: initialCopy });
-
-//     cpxWather.on("copy", (e) => {
-//         let srcPath = path.normalize(path.resolve(vscode.workspace.rootPath, e.srcPath));
-//         // srcPath = path.relative(vscode.workspace.rootPath, srcPath);
-//         srcPath = path.basename(srcPath);
-
-//         let dstPath = path.normalize(path.resolve(vscode.workspace.rootPath, e.dstPath));
-
-//         channel.appendLine(`Copy ${srcPath} => ${dstPath}`);
-//     });
-
-//     cpxWather.on("remove", (e) => {
-//         channel.appendLine(`Remove ${e.path}`);
-//     });
-
-//     cpxWather.on("watch-ready", (e) => {
-//         channel.appendLine(`Start watching copy from '${source}' to '${destination}'`);
-//     });
-
-//     cpxWather.on("watch-error", (e) => {
-//         channel.appendLine(`Error:\r\n${e}`);
-//     });
-// }
-
+export function deactivate() {
+    CopyWatcher.deactivate();
+}
