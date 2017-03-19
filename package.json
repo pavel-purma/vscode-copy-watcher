@@ -19,6 +19,9 @@
     "categories": [
         "Other"
     ],
+    "tags": [
+        "watch", "copy", "mirror"
+    ],
     "activationEvents": [
         "*"
     ],
