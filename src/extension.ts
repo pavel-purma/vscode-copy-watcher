@@ -104,7 +104,7 @@ const CopyWatcherSectionOptionsDefault: ICopyWatcherSectionConfig = {
     excludes: undefined,
     initialCopy: false,
     initialCopyBothSides: false,
-    deleteEnabled: true
+    deleteEnabled: false
 };
 
 class CopyWatcherSection {

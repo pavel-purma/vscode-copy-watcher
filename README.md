@@ -1,19 +1,32 @@
-# vscode-copy-watcher README
+# Copy Watcher - README
 
-Continuously watch for file changes and copy all modified files to defined mirror directory. 
+This extension mirror file changes to other folder.
 
 
 ## Features
 
-Mirror copy changes from defined project folder to other destination.
-It's handy for develop components inside big complex project and update it's sources.
+Copy changed files from source to destination folder. Included files must match to filter (array of globs, minimatch expressions).
+At the start this extension can copy all newer files. It can copy them from both sides (source => destination and even destination => source).
+This's handy for project's shared component which can be placed in other git repository.
 
 
 ## Extension Settings
 
 This extension contributes the following settings:
 
-* `copyWatcher.sections`: list of copy and watch definitions (source and destination)
+* `copyWatcher.sections`: Array of copy and watch definition (source and destination)
+
+Copy watch definition properties:
+
+* `source`: Source folder (relative to workspace root folder)
+* `destination`: Destination folder (relative to workspace root folder)
+* `destinationRequired`: This copy definition will be active only if destination folder exists (default true)
+* `includes`: Array of minimatch filters
+* `excludes`: Array of minimatch filters which are applied in negative way
+* `initialCopy`: Copy all newer files when extension started (default false)
+* `initialCopyBothSides`: Same as initialCopy but files are copied in opposite direction (default false)
+* `deleteEnabled`: Delete of source file will be applied to destination file (default false)
+
 
 Example:
 ```
@@ -28,8 +41,8 @@ Example:
         "excludes": [
             "node_modules/**/*"
         ],
-        "initialCopy": false,
-        "initialCopyBothSides": false,
+        "initialCopy": true,
+        "initialCopyBothSides": true,
         "deleteEnabled": true
     }
 ]

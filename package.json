@@ -1,7 +1,7 @@
 {
     "name": "vscode-copy-watcher",
     "displayName": "Copy Watcher",
-    "description": "",
+    "description": "Mirror file changes to other folder",
     "version": "1.0.0",
     "publisher": "pavel-purma",
     "icon": "copy_watcher.png",
