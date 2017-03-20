@@ -24,7 +24,7 @@ Copy watch definition properties:
 * `includes`: Array of minimatch filters
 * `excludes`: Array of minimatch filters which are applied in negative way
 * `initialCopy`: Copy all newer files when extension started (default false)
-* `initialCopyBothSides`: Same as initialCopy but files are copied in opposite direction (default false)
+* `initialCopyReverse`: Same as initialCopy but files are copied in opposite direction (default false)
 * `deleteEnabled`: Delete of source file will be applied to destination file (default false)
 
 
@@ -42,7 +42,7 @@ Example:
             "node_modules/**/*"
         ],
         "initialCopy": true,
-        "initialCopyBothSides": true,
+        "initialCopyReverse": true,
         "deleteEnabled": true
     }
 ]

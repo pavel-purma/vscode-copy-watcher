@@ -7,7 +7,12 @@ const minimatch = require("minimatch");
 
 class FileUtils {
 
-    public static copyFile(source, target) {
+    public static copyFile(source: string, target: string, forceDir?: boolean) {
+        if (forceDir) {
+            let targetDir = path.dirname(target);
+            FileUtils.forceDir(targetDir);
+        }
+
         return new Promise(function (resolve, reject) {
             const rd = fs.createReadStream(source);
             rd.on('error', rejectCleanup);
@@ -28,25 +33,35 @@ class FileUtils {
         });
     }
 
+    public static forceDir(dir: string) {
+        if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir);
+        }
+    }
+
     public static async copyFileNewerOnly(srcPath, dstPath): Promise<boolean> {
-        const srcStats = fs.statSync(srcPath);
-        const srcMtime = new Date(srcStats.mtime);
+        try {
+            const srcStats = fs.statSync(srcPath);
+            const srcMtime = new Date(srcStats.mtime);
 
-        let dstMtime;
-        const dstExists = fs.existsSync(dstPath);
-        if (dstExists) {
-            let dstStats = fs.statSync(dstPath);
-            dstMtime = new Date(dstStats.mtime);
+            let dstMtime;
+            const dstExists = fs.existsSync(dstPath);
+            if (dstExists) {
+                let dstStats = fs.statSync(dstPath);
+                dstMtime = new Date(dstStats.mtime);
+            }
+
+            // CopyWatcher.consoleChannel.appendLine(`src: ${srcMtime}, dst: ${dstMtime}`);
+
+            if (!dstExists || ((Math.abs(dstMtime.getTime() - srcMtime.getTime()) > 2000) && (srcMtime.getTime() > dstMtime.getTime()))) {
+                await FileUtils.copyFile(srcPath, dstPath, true);
+                fs.utimesSync(dstPath, srcStats.mtime, srcStats.mtime);
+                return true;
+            }
+            return false;
+        } catch (e) {
+            CopyWatcher.consoleChannel.appendLine("File copy error. " + e);
         }
-
-        // CopyWatcher.consoleChannel.appendLine(`src: ${srcMtime}, dst: ${dstMtime}`);
-
-        if (!dstExists || ((Math.abs(dstMtime.getTime() - srcMtime.getTime()) > 2000) && (srcMtime.getTime() > dstMtime.getTime()))) {
-            await FileUtils.copyFile(srcPath, dstPath);
-            fs.utimesSync(dstPath, srcStats.mtime, srcStats.mtime);
-            return true;
-        }
-        return false;
     }
 
     public static checkGlobMatch(file: string, includes: string[], excludes: string[]) {
@@ -92,7 +107,7 @@ interface ICopyWatcherSectionConfig {
     excludes: string[];
 
     initialCopy: boolean;
-    initialCopyBothSides: boolean;
+    initialCopyReverese: boolean;
     deleteEnabled: boolean;
 }
 
@@ -103,7 +118,7 @@ const CopyWatcherSectionOptionsDefault: ICopyWatcherSectionConfig = {
     includes: undefined,
     excludes: undefined,
     initialCopy: false,
-    initialCopyBothSides: false,
+    initialCopyReverese: false,
     deleteEnabled: false
 };
 
@@ -122,7 +137,7 @@ class CopyWatcherSection {
 
         CopyWatcher.consoleChannel.appendLine(`Section initialize: '${this.options.source}' => '${this.options.destination}'`);
         if (this.options.initialCopy) {
-            if (this.options.initialCopyBothSides) {
+            if (this.options.initialCopyReverese) {
                 await this.execInitialCopyReverse();
             }
             await this.execInitialCopy();
