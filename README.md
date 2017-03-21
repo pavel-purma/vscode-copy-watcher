@@ -34,7 +34,7 @@ Example:
     {
         "source": "Components/Component",
         "destination": "../../ComponentRepository/Component",
-        "destinationRequired: true,
+        "destinationRequired": true,
         "includes": [
             "/**/*.js"
         ],
