@@ -2,7 +2,7 @@
     "name": "copy-watcher",
     "displayName": "Copy Watcher",
     "description": "Mirror file changes to other folder",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "publisher": "pavel-purma",
     "icon": "copy_watcher.png",
     "repository": {
