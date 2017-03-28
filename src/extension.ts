@@ -1,9 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
-const Glob = require("glob").Glob;
 const minimatch = require("minimatch");
-
 
 class FileUtils {
 
@@ -95,6 +93,20 @@ class FileUtils {
         } catch (e) {
             return false;
         }
+    }
+
+    public static iterateAllFilesTree(rootPath: string, matchFile: {(filename: string): void} ): void {
+        const dirTree = (filename) => {
+            const stats = fs.lstatSync(filename);
+            if (stats.isDirectory()) {
+                for (let child of fs.readdirSync(filename)) {
+                    dirTree(filename + '/' + child);
+                };
+            } else {
+                matchFile(filename);
+            }
+        }
+        dirTree(rootPath);
     }
 }
 
@@ -262,27 +274,19 @@ class CopyWatcherProcess {
         return new Promise<string[]>((resolve, reject) => {
             const ret: string[] = [];
             let pathToFind = path.resolve(vscode.workspace.rootPath, this.source);
-            const mg = new Glob(path.resolve(pathToFind, "**/*"), {}, (err, files) => {
-                if (err) {
-                    reject(err);
-                }
-                if (files && !err) {
-                    files.forEach((val) => {
-                        let pathRel = (val as string).substr(pathToFind.length);
-                        if (pathRel.length > 0 && (pathRel[0] == "/" || pathRel[0] == "\\")) {
-                            pathRel = pathRel.substr(1);
-                        }
 
-                        let matched = FileUtils.checkGlobMatch(pathRel, this.includes, this.excludes);
-                        if (matched) {
-                            ret.push(pathRel);
-                        }
-                    });
-                    resolve(ret);
-                } else {
-                    resolve([]);
+            FileUtils.iterateAllFilesTree(pathToFind, (file) => {
+                let pathRel = (file as string).substr(pathToFind.length);
+                if (pathRel.length > 0 && (pathRel[0] == "/" || pathRel[0] == "\\")) {
+                    pathRel = pathRel.substr(1);
+                }
+
+                let matched = FileUtils.checkGlobMatch(pathRel, this.includes, this.excludes);
+                if (matched) {
+                    ret.push(pathRel);
                 }
             });
+            resolve(ret);
         });
     }
 }
