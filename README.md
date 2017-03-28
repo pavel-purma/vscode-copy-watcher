@@ -36,10 +36,12 @@ Example:
         "destination": "../../ComponentRepository/Component",
         "destinationRequired": true,
         "includes": [
-            "/**/*.js"
+            "**/*.js",
+            "**/*.ts"
         ],
         "excludes": [
-            "node_modules/**/*"
+            "node_modules/**/*",
+            "out/**/*"
         ],
         "initialCopy": true,
         "initialCopyReverse": true,
