@@ -32,8 +32,14 @@ class FileUtils {
     }
 
     public static forceDir(dir: string) {
-        if (!fs.existsSync(dir)) {
-            fs.mkdirSync(dir);
+        if (!fs.existsSync(dir)) { // always returns false for folders on windows mapped network drive
+            try {
+                fs.mkdirSync(dir);
+            }
+            catch (e) {
+                if (("" + e).indexOf("EEXIST") < 0) // existsSync returned false above, so mkdirSync fails with EEXIST in error message 
+                    throw e;
+            }
         }
     }
 
